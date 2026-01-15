@@ -29,11 +29,11 @@ Because liquor prices in Iowa are state-controlled, margin differences are minim
 - Which stores underperform compared to others in the same county?
 
 ## Repository Structure
-01_data_prep.sql
-02_sales_trends.sql
-03_category_mix_by_county.sql
-04_store_benchmark.sql
-05_regional_behavior.sql
+- 01_data_prep.sql
+- 02_sales_trends.sql
+- 03_category_mix_by_county.sql
+- 04_store_benchmark.sql
+- 05_regional_behavior.sql
 
 
 ## Why It Matters
