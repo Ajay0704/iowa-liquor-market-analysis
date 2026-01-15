@@ -1,0 +1,237 @@
+<?xml version="1.0" encoding="UTF-8"?><sqlb_project><db path="Warehouse_and_Retail_Sales_20260115.csv" readonly="0" foreign_keys="1" case_sensitive_like="0" temp_store="0" wal_autocheckpoint="1000" synchronous="2"/><attached/><window><main_tabs open="structure browser pragmas query" current="3"/></window><tab_structure><column_width id="0" width="300"/><column_width id="1" width="0"/><column_width id="2" width="100"/><column_width id="3" width="4176"/><column_width id="4" width="0"/><expanded_item id="0" parent="1"/><expanded_item id="1" parent="1"/><expanded_item id="2" parent="1"/><expanded_item id="3" parent="1"/></tab_structure><tab_browse><table title="retail_market_analysis.db" custom_title="0" dock_id="2" table="4,25:mainretail_market_analysis.db"/><dock_state state="000000ff00000000fd00000001000000020000039e0000035efc0100000002fb000000160064006f0063006b00420072006f00770073006500310100000000ffffffff0000000000000000fb000000160064006f0063006b00420072006f007700730065003201000000000000039e0000010100ffffff0000027e0000000000000004000000040000000800000008fc00000000"/><default_encoding codec=""/><browse_table_settings/></tab_browse><tab_sql><sql name="SQL 1*">PRAGMA table_info(sales_raw);
+
+DROP VIEW IF EXISTS v_sales;
+
+CREATE VIEW v_sales AS
+SELECT
+  &quot;Invoice/Item Number&quot;       AS invoice_item_number,
+  &quot;Date&quot;                      AS sale_date,
+  &quot;Store Number&quot;              AS store_number,
+  &quot;Store Name&quot;                AS store_name,
+  &quot;Address&quot;                   AS address,
+  &quot;City&quot;                      AS city,
+  &quot;Zip Code&quot;                  AS zip_code,
+  &quot;Store Location&quot;            AS store_location,
+  &quot;County Number&quot;             AS county_number,
+  &quot;County&quot;                    AS county,
+  &quot;Category&quot;                  AS category_id,
+  &quot;Category Name&quot;             AS category_name,
+  &quot;Vendor Number&quot;             AS vendor_number,
+  &quot;Vendor Name&quot;               AS vendor_name,
+  &quot;Item Number&quot;               AS item_number,
+  &quot;Item Description&quot;          AS item_description,
+  &quot;Pack&quot;                      AS pack,
+  &quot;Bottle Volume (ml)&quot;        AS bottle_volume_ml,
+  &quot;State Bottle Cost&quot;         AS state_bottle_cost,
+  &quot;State Bottle Retail&quot;       AS state_bottle_retail,
+  &quot;Bottles Sold&quot;              AS bottles_sold,
+  &quot;Sale (Dollars)&quot;            AS sale_dollars,
+  &quot;Volume Sold (Liters)&quot;      AS volume_sold_liters,
+  &quot;Volume Sold (Gallons)&quot;     AS volume_sold_gallons
+FROM sales_raw;
+
+SELECT *
+FROM v_sales
+LIMIT 10;
+
+SELECT
+  COUNT(*) AS rows,
+  MIN(sale_date) AS min_date,
+  MAX(sale_date) AS max_date
+FROM v_sales;
+
+SELECT
+  substr(sale_date, 7, 4) || '-' || substr(sale_date, 1, 2) AS year_month,
+  ROUND(SUM(sale_dollars), 2) AS total_sales
+FROM v_sales
+GROUP BY 1
+ORDER BY 1;
+
+SELECT
+  substr(sale_date, 7, 4) AS year,
+  ROUND(SUM(sale_dollars), 2) AS total_sales
+FROM v_sales
+GROUP BY 1
+ORDER BY 1;
+
+SELECT
+  category_name,
+  ROUND(SUM(sale_dollars), 2) AS total_sales,
+  SUM(bottles_sold) AS bottles_sold
+FROM v_sales
+GROUP BY category_name
+ORDER BY total_sales DESC
+LIMIT 15;
+
+DROP VIEW IF EXISTS v_sales_margin;
+
+CREATE VIEW v_sales_margin AS
+SELECT
+  v_sales.*,
+  (state_bottle_retail - state_bottle_cost) AS margin_per_bottle,
+  (state_bottle_retail - state_bottle_cost) * bottles_sold AS total_margin
+FROM v_sales;
+
+SELECT
+  vendor_name,
+  ROUND(SUM(sale_dollars), 2) AS total_sales,
+  ROUND(SUM(total_margin), 2) AS total_margin,
+  ROUND(SUM(total_margin) / NULLIF(SUM(sale_dollars),0), 4) AS margin_rate
+FROM v_sales_margin
+GROUP BY vendor_name
+ORDER BY total_margin DESC
+LIMIT 20;
+
+SELECT
+  category_name,
+  ROUND(SUM(sale_dollars), 2) AS total_sales,
+  ROUND(SUM(total_margin), 2) AS total_margin,
+  ROUND(SUM(total_margin) / NULLIF(SUM(sale_dollars),0), 4) AS margin_rate
+FROM v_sales_margin
+GROUP BY category_name
+HAVING SUM(sale_dollars) &gt; 1000000
+ORDER BY margin_rate ASC
+LIMIT 20;
+
+SELECT
+  store_number,
+  store_name,
+  city,
+  county,
+  ROUND(SUM(sale_dollars), 2) AS total_sales
+FROM v_sales
+GROUP BY store_number, store_name, city, county
+ORDER BY total_sales DESC
+LIMIT 20;
+
+WITH base AS (
+  SELECT
+    county,
+    substr(sale_date, 7, 4) || '-' || substr(sale_date, 1, 2) AS year_month,
+    store_number,
+    store_name,
+    SUM(sale_dollars) AS store_sales
+  FROM v_sales
+  GROUP BY county, year_month, store_number, store_name
+),
+county_avg AS (
+  SELECT
+    county,
+    year_month,
+    AVG(store_sales) AS county_avg_sales
+  FROM base
+  GROUP BY county, year_month
+)
+SELECT
+  b.county,
+  b.year_month,
+  b.store_number,
+  b.store_name,
+  ROUND(b.store_sales, 2) AS store_sales,
+  ROUND(c.county_avg_sales, 2) AS county_avg_sales,
+  ROUND(b.store_sales - c.county_avg_sales, 2) AS diff_vs_county_avg
+FROM base b
+JOIN county_avg c
+  ON b.county = c.county AND b.year_month = c.year_month
+WHERE b.store_sales &gt;= 5000          -- remove tiny stores/months
+ORDER BY diff_vs_county_avg ASC
+LIMIT 50;
+
+SELECT
+  county,
+  ROUND(SUM(sale_dollars), 2) AS total_sales,
+  SUM(bottles_sold) AS bottles_sold
+FROM v_sales
+GROUP BY county
+ORDER BY total_sales DESC
+LIMIT 20;
+
+SELECT
+  substr(sale_date, 1, 2) AS month,
+  ROUND(SUM(sale_dollars), 2) AS total_sales
+FROM v_sales
+GROUP BY month
+ORDER BY total_sales DESC;
+
+SELECT
+  county,
+  vendor_name,
+  ROUND(SUM(sale_dollars), 2) AS total_sales,
+  ROUND(SUM(total_margin), 2) AS total_margin
+FROM v_sales_margin
+GROUP BY county, vendor_name
+HAVING SUM(sale_dollars) &gt; 500000
+ORDER BY county, total_margin DESC;
+
+WITH item_perf AS (
+  SELECT
+    category_name,
+    item_number,
+    item_description,
+    SUM(sale_dollars) AS sales,
+    SUM(total_margin) AS margin,
+    (SUM(total_margin) / NULLIF(SUM(sale_dollars),0)) AS margin_rate
+  FROM v_sales_margin
+  GROUP BY category_name, item_number, item_description
+  HAVING SUM(sale_dollars) &gt; 200000
+),
+cat_baseline AS (
+  SELECT
+    category_name,
+    AVG(margin_rate) AS avg_cat_margin_rate
+  FROM item_perf
+  GROUP BY category_name
+)
+SELECT
+  i.category_name,
+  i.item_number,
+  i.item_description,
+  ROUND(i.sales, 2) AS sales,
+  ROUND(i.margin, 2) AS margin,
+  ROUND(i.margin_rate, 4) AS item_margin_rate,
+  ROUND(c.avg_cat_margin_rate, 4) AS category_avg_margin_rate,
+  ROUND(i.margin_rate - c.avg_cat_margin_rate, 4) AS diff_vs_category_avg
+FROM item_perf i
+JOIN cat_baseline c USING (category_name)
+WHERE i.margin_rate &lt; c.avg_cat_margin_rate - 0.05
+ORDER BY diff_vs_category_avg ASC
+LIMIT 50;
+
+SELECT COUNT(*) AS rows
+FROM v_sales_margin;
+
+WITH item_perf AS (
+  SELECT
+    category_name,
+    item_number,
+    item_description,
+    SUM(sale_dollars) AS sales,
+    SUM(total_margin) AS margin,
+    (SUM(total_margin) / NULLIF(SUM(sale_dollars),0)) AS margin_rate
+  FROM v_sales_margin
+  GROUP BY category_name, item_number, item_description
+  HAVING SUM(sale_dollars) &gt; 200000
+),
+ranked AS (
+  SELECT
+    *,
+    ROW_NUMBER() OVER (
+      PARTITION BY category_name
+      ORDER BY margin_rate ASC
+    ) AS rn
+  FROM item_perf
+  WHERE margin_rate IS NOT NULL
+)
+SELECT
+  category_name,
+  item_number,
+  item_description,
+  ROUND(sales, 2) AS sales,
+  ROUND(margin, 2) AS margin,
+  ROUND(margin_rate, 4) AS margin_rate
+FROM ranked
+WHERE rn &lt;= 3
+ORDER BY category_name, margin_rate;
+
+
+</sql><current_tab id="0"/></tab_sql></sqlb_project>
